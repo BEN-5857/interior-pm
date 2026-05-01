@@ -1,4 +1,8 @@
-import { useState, useMemo, useRef } from "react";
+import { useState, useMemo, useRef, useEffect } from "react";
+
+// --- 配置區 ---
+// 請在此處貼上你在 Google Apps Script 部署後獲得的「網頁應用程式網址」
+const GAS_URL = 'https://script.google.com/macros/s/AKfycbwUdfgvymk3fCWTutVtm5TdWH9ww-S4cNcfWzR4KwZpRovQB2ImENPCubCopLgTwM3bOg/exec'; 
 
 const TW_HOLIDAYS = new Set([
   '2024-01-01','2024-02-08','2024-02-09','2024-02-10','2024-02-11','2024-02-12','2024-02-13','2024-02-14',
@@ -9,6 +13,7 @@ const TW_HOLIDAYS = new Set([
   '2026-02-28','2026-04-03','2026-04-04','2026-04-06','2026-05-01','2026-06-19','2026-09-25','2026-10-09','2026-10-10'
 ]);
 
+// --- 工具函數 ---
 function isWorkday(date) {
   const d = new Date(date);
   if (d.getDay()===0||d.getDay()===6) return false;
@@ -41,60 +46,11 @@ function tradeEndDate(trade) {
   return dateToStr(addWorkdays(new Date(trade.startDate), trade.days-1));
 }
 
-function initTrades(trades, projectStart) {
-  let cur = new Date(projectStart);
-  return trades.map(t => {
-    const sd = dateToStr(nextWorkday(cur));
-    cur = addWorkdays(new Date(sd), t.days);
-    return { ...t, startDate: sd };
-  });
-}
-
 const STATUS = {
   waiting: { label:'等待中', color:'#6b7280', bg:'#f3f4f6' },
   active:  { label:'施工中', color:'#b45309', bg:'#fef3c7' },
   done:    { label:'已完工', color:'#065f46', bg:'#d1fae5' },
 };
-
-const RAW = [
-  { id:'p1', name:'中山北路辦公室', client:'台灣新創股份有限公司', startDate:'2025-03-03', maxWorkdays:95, trades:[
-    { id:'t1',  name:'拆除工程',   days:5,  items:[{id:'i1',content:'現場隔間牆體拆除',status:'done'},{id:'i2',content:'舊天花板拆除',status:'done'},{id:'i3',content:'拆除廢棄物清運',status:'done'}]},
-    { id:'t2',  name:'水電工程',   days:18, items:[{id:'i4',content:'放樣定位',status:'done'},{id:'i5',content:'切割打鑿埋管',status:'done'},{id:'i6',content:'拉電源線、燈線',status:'active'},{id:'i7',content:'配進水管、排水管、移糞管、排氣管',status:'active'},{id:'i8',content:'改消防水管',status:'waiting'},{id:'i9',content:'開燈孔',status:'waiting'},{id:'i10',content:'裝開關插座／衛浴設備',status:'waiting'},{id:'i11',content:'裝燈具／收尾',status:'waiting'}]},
-    { id:'t3',  name:'泥作工程',   days:12, items:[{id:'i12',content:'砌磚',status:'waiting'},{id:'i13',content:'全室牆面整理粉光',status:'waiting'},{id:'i14',content:'防水施作',status:'waiting'},{id:'i15',content:'地坪施作',status:'waiting'},{id:'i16',content:'養護',status:'waiting'},{id:'i17',content:'貼磁磚（壁磚、地磚）',status:'waiting'}]},
-    { id:'t4',  name:'門窗工程',   days:5,  items:[{id:'i18',content:'丈量門窗大小型式',status:'waiting'},{id:'i19',content:'門窗製作',status:'waiting'},{id:'i20',content:'門窗安裝',status:'waiting'}]},
-    { id:'t5',  name:'冷氣工程',   days:6,  items:[{id:'i21',content:'現場勘驗',status:'waiting'},{id:'i22',content:'拉銅管、確認室內機排水管位置',status:'waiting'},{id:'i23',content:'安裝、周圍水泥填縫',status:'waiting'},{id:'i24',content:'裝室內室外機',status:'waiting'}]},
-    { id:'t6',  name:'木作工程',   days:25, items:[{id:'i25',content:'保護工程、張貼布告',status:'waiting'},{id:'i26',content:'進場放樣',status:'waiting'},{id:'i27',content:'天花施作',status:'waiting'},{id:'i28',content:'門片製作',status:'waiting'},{id:'i29',content:'造型牆面木作',status:'waiting'},{id:'i30',content:'木作收邊',status:'waiting'}]},
-    { id:'t7',  name:'油漆工程',   days:10, items:[{id:'i31',content:'進場抓AB膠、批土',status:'waiting'},{id:'i32',content:'批土、打磨',status:'waiting'},{id:'i33',content:'門片、鐵件烤漆',status:'waiting'},{id:'i34',content:'牆面滾塗',status:'waiting'},{id:'i35',content:'修整收尾',status:'waiting'}]},
-    { id:'t8',  name:'廚具工程',   days:3,  items:[{id:'i36',content:'廚具丈量',status:'waiting'},{id:'i37',content:'廚具安裝',status:'waiting'}]},
-    { id:'t9',  name:'玻璃工程',   days:4,  items:[{id:'i38',content:'玻璃丈量',status:'waiting'},{id:'i39',content:'玻璃安裝',status:'waiting'}]},
-    { id:'t10', name:'系統櫃工程', days:4,  items:[{id:'i40',content:'系統櫃丈量',status:'waiting'},{id:'i41',content:'系統櫃安裝',status:'waiting'}]},
-    { id:'t11', name:'木地板工程', days:5,  items:[{id:'i42',content:'木地板丈量',status:'waiting'},{id:'i43',content:'木地板施工',status:'waiting'},{id:'i44',content:'打矽利康收邊',status:'waiting'}]},
-    { id:'t12', name:'其他工程',   days:3,  items:[{id:'i45',content:'人造石丈量',status:'waiting'},{id:'i46',content:'人造石安裝',status:'waiting'}]},
-    { id:'t13', name:'清潔工程',   days:2,  items:[{id:'i47',content:'全室細清',status:'waiting'}]},
-    { id:'t14', name:'窗簾／壁紙', days:2,  items:[{id:'i48',content:'裝窗簾',status:'waiting'}]},
-    { id:'t15', name:'家具／軟件', days:2,  items:[{id:'i49',content:'送電器家具',status:'waiting'},{id:'i50',content:'維修整理、驗收入宅',status:'waiting'}]},
-  ]},
-  { id:'p2', name:'自由年代林宅', client:'林先生 / 林太太', startDate:'2025-04-25', maxWorkdays:95, trades:[
-    { id:'t16', name:'拆除工程',   days:5,  items:[{id:'i51',content:'拆除清運工程',status:'done'},{id:'i52',content:'廢棄物清運',status:'done'}]},
-    { id:'t17', name:'水電工程',   days:20, items:[{id:'i53',content:'放樣定位',status:'done'},{id:'i54',content:'切割打鑿埋管',status:'done'},{id:'i55',content:'拉電源線、燈線',status:'active'},{id:'i56',content:'配進水管、排水管、移糞管、排氣管',status:'active'},{id:'i57',content:'改消防水管',status:'waiting'},{id:'i58',content:'開燈孔',status:'waiting'},{id:'i59',content:'裝開關插座／衛浴設備',status:'waiting'},{id:'i60',content:'裝燈具／收尾',status:'waiting'}]},
-    { id:'t18', name:'泥作工程',   days:15, items:[{id:'i61',content:'砌磚',status:'waiting'},{id:'i62',content:'全室牆面整理粉光',status:'waiting'},{id:'i63',content:'防水施作',status:'waiting'},{id:'i64',content:'地坪施作',status:'waiting'},{id:'i65',content:'養護',status:'waiting'},{id:'i66',content:'貼磁磚（壁磚、地磚）',status:'waiting'}]},
-    { id:'t19', name:'門窗工程',   days:5,  items:[{id:'i67',content:'丈量門窗大小型式',status:'waiting'},{id:'i68',content:'門窗安裝',status:'waiting'}]},
-    { id:'t20', name:'冷氣工程',   days:5,  items:[{id:'i69',content:'現場勘驗',status:'waiting'},{id:'i70',content:'拉銅管、確認室內機排水管位置',status:'waiting'},{id:'i71',content:'安裝、周圍水泥填縫',status:'waiting'},{id:'i72',content:'裝室內室外機',status:'waiting'}]},
-    { id:'t21', name:'鐵件工程',   days:5,  items:[{id:'i73',content:'鐵件丈量',status:'waiting'},{id:'i74',content:'鐵件製作',status:'waiting'},{id:'i75',content:'鐵件安裝',status:'waiting'}]},
-    { id:'t22', name:'木作工程',   days:22, items:[{id:'i76',content:'保護工程、張貼布告',status:'waiting'},{id:'i77',content:'進場放樣',status:'waiting'},{id:'i78',content:'天花施作',status:'waiting'},{id:'i79',content:'門片製作',status:'waiting'},{id:'i80',content:'木作收邊',status:'waiting'}]},
-    { id:'t23', name:'油漆工程',   days:10, items:[{id:'i81',content:'進場抓AB膠、批土',status:'waiting'},{id:'i82',content:'批土、打磨',status:'waiting'},{id:'i83',content:'門片、鐵件烤漆',status:'waiting'},{id:'i84',content:'牆面滾塗',status:'waiting'},{id:'i85',content:'修整收尾',status:'waiting'}]},
-    { id:'t24', name:'廚具工程',   days:3,  items:[{id:'i86',content:'廚具丈量',status:'waiting'},{id:'i87',content:'廚具安裝',status:'waiting'}]},
-    { id:'t25', name:'玻璃工程',   days:3,  items:[{id:'i88',content:'玻璃丈量',status:'waiting'},{id:'i89',content:'玻璃安裝',status:'waiting'}]},
-    { id:'t26', name:'其他工程',   days:3,  items:[{id:'i90',content:'人造石丈量',status:'waiting'},{id:'i91',content:'人造石安裝',status:'waiting'}]},
-    { id:'t27', name:'系統櫃工程', days:3,  items:[{id:'i92',content:'系統櫃丈量',status:'waiting'},{id:'i93',content:'系統櫃安裝',status:'waiting'}]},
-    { id:'t28', name:'木地板工程', days:4,  items:[{id:'i94',content:'木地板丈量',status:'waiting'},{id:'i95',content:'木地板施工',status:'waiting'},{id:'i96',content:'打矽利康收邊',status:'waiting'}]},
-    { id:'t29', name:'清潔工程',   days:2,  items:[{id:'i97',content:'全室細清',status:'waiting'}]},
-    { id:'t30', name:'窗簾／壁紙', days:2,  items:[{id:'i98',content:'裝窗簾',status:'waiting'}]},
-    { id:'t31', name:'家具／軟件', days:2,  items:[{id:'i99',content:'送電器家具',status:'waiting'},{id:'i100',content:'維修整理、驗收入宅',status:'waiting'}]},
-  ]},
-];
-
-const INITIAL = RAW.map(p=>({...p, trades:initTrades(p.trades, p.startDate)}));
 
 function Badge({ status, onClick }) {
   const cfg = STATUS[status];
@@ -159,7 +115,7 @@ function TradeCard({ trade, onStatus, onDays, onAdd, onDel, onStartDate }) {
 
 function GanttChart({ trades, ganttStart, ganttEnd, onTradeStartDate }) {
   const railsRef = useRef({});
-  const dragRef = useRef(null); // stores { tradeId, startX, origSD, railW }
+  const dragRef = useRef(null); 
   const [dragOffsets, setDragOffsets] = useState({});
   const totalCalDays = calDays(ganttStart, ganttEnd) + 1;
 
@@ -206,7 +162,6 @@ function GanttChart({ trades, ganttStart, ganttEnd, onTradeStartDate }) {
     function onUp(cx) {
       const info = dragRef.current;
       if (!info) return;
-      // capture everything before clearing
       const { tradeId, startX, origSD, railW } = info;
       dragRef.current = null;
       const dm = Math.round(((cx - startX) / railW) * totalCalDays);
@@ -241,7 +196,6 @@ function GanttChart({ trades, ganttStart, ganttEnd, onTradeStartDate }) {
         <span style={{fontSize:10,color:'#b0b7c3'}}>← 拖拉色條可調整各工種起始日，工種間可自由重疊 →</span>
       </div>
       <div style={{minWidth:540}}>
-        {/* Month header */}
         <div style={{display:'flex',marginBottom:2}}>
           <div style={{width:LABEL_W,flexShrink:0}}/>
           <div style={{flex:1,position:'relative',height:18}}>
@@ -250,7 +204,6 @@ function GanttChart({ trades, ganttStart, ganttEnd, onTradeStartDate }) {
             ))}
           </div>
         </div>
-        {/* Thin rule with today marker */}
         <div style={{display:'flex',marginBottom:5}}>
           <div style={{width:LABEL_W,flexShrink:0}}/>
           <div style={{flex:1,position:'relative',height:4,background:'#f3f4f6',borderRadius:2}}>
@@ -258,7 +211,6 @@ function GanttChart({ trades, ganttStart, ganttEnd, onTradeStartDate }) {
             {todayPct!==null&&<div style={{position:'absolute',left:`${todayPct}%`,top:-3,bottom:-3,borderLeft:'2px dashed #ef4444',zIndex:2}}/>}
           </div>
         </div>
-        {/* Trade rows */}
         {trades.map(t=>{
           const offset = dragOffsets[t.id] || 0;
           const effS = new Date(t.startDate); effS.setDate(effS.getDate()+offset);
@@ -278,7 +230,6 @@ function GanttChart({ trades, ganttStart, ganttEnd, onTradeStartDate }) {
                 <div
                   onMouseDown={e=>{e.preventDefault();startDrag(e.clientX,t);}}
                   onTouchStart={e=>{e.preventDefault();startDrag(e.touches[0].clientX,t);}}
-                  title={`拖拉調整「${t.name}」起始日`}
                   style={{
                     position:'absolute',left:`${Math.max(0,leftPct)}%`,width:`${widthPct}%`,
                     top:3,bottom:3,background:bg,borderRadius:3,
@@ -299,29 +250,71 @@ function GanttChart({ trades, ganttStart, ganttEnd, onTradeStartDate }) {
             </div>
           );
         })}
-        {/* Legend */}
-        <div style={{display:'flex',gap:14,marginTop:10,alignItems:'center',flexWrap:'wrap'}}>
-          {[{c:'#065f46',l:'已完工'},{c:'#d97706',l:'施工中'},{c:'#6366f1',l:'等待中'}].map(({c,l})=>(
-            <div key={l} style={{display:'flex',alignItems:'center',gap:5}}>
-              <div style={{width:10,height:10,borderRadius:2,background:c}}/>
-              <span style={{fontSize:11,color:'#6b7280'}}>{l}</span>
-            </div>
-          ))}
-          <div style={{display:'flex',alignItems:'center',gap:5}}>
-            <div style={{width:14,height:0,borderTop:'2px dashed #ef4444'}}/>
-            <span style={{fontSize:11,color:'#6b7280'}}>今日</span>
-          </div>
-        </div>
       </div>
     </div>
   );
 }
 
 export default function App() {
-  const [projects, setProjects] = useState(INITIAL);
-  const [pid, setPid] = useState('p1');
-  const [showNew, setShowNew] = useState(false);
-  const [form, setForm] = useState({name:'',client:'',startDate:''});
+  const [projects, setProjects] = useState([]);
+  const [pid, setPid] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  // --- 1. 從 Google Sheets 讀取資料 ---
+  useEffect(() => {
+    async function fetchData() {
+      try {
+        const res = await fetch(GAS_URL);
+        const data = await res.json();
+        if (data && data.length > 0) {
+           const formatted = [{
+             id: 'p1', name: '專案進度管理', client: '專案客戶', 
+             startDate: data[0].startDate || '2025-03-03', maxWorkdays: 95, 
+             trades: data.map(row => ({
+                id: row.id, name: row.task, days: parseInt(row.days) || 1,
+                startDate: row.startDate, 
+                items: JSON.parse(row.items || '[]')
+             }))
+           }];
+           setProjects(formatted);
+           setPid('p1');
+        }
+      } catch (e) {
+        console.error("讀取失敗:", e);
+      } finally {
+        setLoading(false);
+      }
+    }
+    fetchData();
+  }, []);
+
+  // --- 2. 自動儲存回 Google Sheets ---
+  useEffect(() => {
+    if (loading || !projects.length) return;
+    const currentProj = projects.find(p => p.id === pid);
+    if (!currentProj) return;
+
+    const timer = setTimeout(async () => {
+      const payload = currentProj.trades.map(t => ({
+        id: t.id,
+        task: t.name,
+        startDate: t.startDate,
+        days: t.days,
+        items: JSON.stringify(t.items)
+      }));
+
+      try {
+        await fetch(GAS_URL, {
+          method: 'POST',
+          body: JSON.stringify(payload)
+        });
+      } catch (e) {
+        console.error("備份失敗:", e);
+      }
+    }, 2000); 
+
+    return () => clearTimeout(timer);
+  }, [projects, pid]);
 
   const proj = projects.find(p=>p.id===pid);
   const allItems = proj?.trades.flatMap(t=>t.items)||[];
@@ -359,113 +352,48 @@ export default function App() {
     onStartDate: (tid,sd)    => upd(p=>({...p,trades:p.trades.map(t=>t.id===tid?{...t,startDate:sd}:t)})),
   };
 
+  if (loading) return <div style={{padding:50, textAlign:'center'}}>正在連接資料庫讀取進度...</div>;
+
   return (
     <div style={{minHeight:'100vh',background:'#f9fafb',fontFamily:"'Helvetica Neue',Arial,sans-serif"}}>
       <div style={{background:'#064e3b',color:'white',padding:'16px 24px',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
         <div>
           <div style={{fontSize:10,letterSpacing:3,color:'#6ee7b7',marginBottom:2}}>INTERIOR WORKS</div>
-          <div style={{fontSize:18,fontWeight:800}}>工程進度管理系統</div>
+          <div style={{fontSize:18,fontWeight:800}}>工程進度管理系統 v2 (雲端同步版)</div>
         </div>
-        <div style={{fontSize:11,color:'#6ee7b7'}}>Professional Project Tracker</div>
       </div>
 
-      <div style={{background:'white',borderBottom:'2px solid #e5e7eb',display:'flex',alignItems:'center',paddingLeft:24,overflowX:'auto'}}>
+      <div style={{background:'white',borderBottom:'2px solid #e5e7eb',display:'flex',alignItems:'center',paddingLeft:24}}>
         {projects.map(p=>(
-          <button key={p.id} onClick={()=>setPid(p.id)} style={{padding:'14px 20px',border:'none',background:'none',cursor:'pointer',color:p.id===pid?'#064e3b':'#6b7280',fontWeight:p.id===pid?700:400,fontSize:13,borderBottom:p.id===pid?'2px solid #064e3b':'2px solid transparent',marginBottom:-2,whiteSpace:'nowrap'}}>{p.name}</button>
+          <button key={p.id} onClick={()=>setPid(p.id)} style={{padding:'14px 20px',border:'none',background:'none',cursor:'pointer',color:p.id===pid?'#064e3b':'#6b7280',fontWeight:p.id===pid?700:400,fontSize:13,borderBottom:p.id===pid?'2px solid #064e3b':'2px solid transparent',marginBottom:-2}}>{p.name}</button>
         ))}
-        <button onClick={()=>setShowNew(!showNew)} style={{marginLeft:'auto',marginRight:16,padding:'8px 14px',background:'#ecfdf5',color:'#065f46',border:'1px solid #a7f3d0',borderRadius:6,cursor:'pointer',fontSize:12,fontWeight:600,whiteSpace:'nowrap'}}>＋ 新增案場</button>
       </div>
-
-      {showNew && (
-        <div style={{background:'#f0fdf4',borderBottom:'1px solid #d1fae5',padding:'14px 24px',display:'flex',gap:12,flexWrap:'wrap',alignItems:'flex-end'}}>
-          {[{k:'name',l:'案場名稱',ph:'例：信義路住宅',t:'text'},{k:'client',l:'客戶',ph:'例：陳先生',t:'text'},{k:'startDate',l:'開工日',ph:'',t:'date'}].map(({k,l,ph,t})=>(
-            <div key={k} style={{flex:'1 1 160px'}}>
-              <label style={{fontSize:11,color:'#6b7280',display:'block',marginBottom:4}}>{l}</label>
-              <input type={t} value={form[k]} placeholder={ph} onChange={e=>setForm(f=>({...f,[k]:e.target.value}))} style={{width:'100%',padding:'7px 10px',border:'1px solid #d1d5db',borderRadius:6,fontSize:13}}/>
-            </div>
-          ))}
-          <button onClick={()=>{
-            if(!form.name.trim()||!form.startDate) return;
-            const raw=[
-              {id:'ta'+Date.now(),name:'拆除工程',days:5,items:[]},
-              {id:'tb'+Date.now(),name:'水電工程',days:15,items:[]},
-              {id:'tc'+Date.now(),name:'木作工程',days:20,items:[]},
-              {id:'td'+Date.now(),name:'油漆工程',days:10,items:[]},
-              {id:'te'+Date.now(),name:'清潔驗收',days:3,items:[]},
-            ];
-            const np={id:'p'+Date.now(),name:form.name.trim(),client:form.client.trim(),startDate:form.startDate,maxWorkdays:95,trades:initTrades(raw,form.startDate)};
-            setProjects(ps=>[...ps,np]); setPid(np.id); setShowNew(false); setForm({name:'',client:'',startDate:''});
-          }} style={{padding:'8px 20px',background:'#064e3b',color:'white',border:'none',borderRadius:6,cursor:'pointer',fontWeight:600}}>建立案場</button>
-        </div>
-      )}
 
       {proj && (
         <div style={{maxWidth:900,margin:'0 auto',padding:'20px 16px'}}>
-          {/* Summary card */}
           <div style={{background:'white',border:'1px solid #e5e7eb',borderRadius:12,padding:'20px',marginBottom:16}}>
             <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',flexWrap:'wrap',gap:12,marginBottom:16}}>
               <div>
                 <div style={{fontSize:20,fontWeight:800,color:'#111827'}}>{proj.name}</div>
                 <div style={{fontSize:13,color:'#6b7280',marginTop:2}}>客戶：{proj.client}</div>
               </div>
-              <div style={{display:'flex',gap:10,flexWrap:'wrap',alignItems:'stretch'}}>
-                {[
-                  {l:'開工日',   v:formatDate(proj.startDate), c:'#111827', a:false},
-                  {l:'預計完工', v:formatDate(lastEnd),        c:isOver?'#dc2626':'#065f46', a:false},
-                ].map(({l,v,c,a})=>(
-                  <div key={l} style={{background:'#f9fafb',border:'1px solid #e5e7eb',borderRadius:8,padding:'10px 16px',textAlign:'center'}}>
-                    <div style={{fontSize:10,color:'#9ca3af',marginBottom:3}}>{l}</div>
-                    <div style={{fontSize:14,fontWeight:700,color:c}}>{v}</div>
-                  </div>
-                ))}
-                {/* Editable max workdays */}
-                <div style={{background:isOver?'#fef2f2':'#f9fafb',border:`1px solid ${isOver?'#fecaca':'#e5e7eb'}`,borderRadius:8,padding:'10px 16px',textAlign:'center',minWidth:130}}>
-                  <div style={{fontSize:10,color:'#9ca3af',marginBottom:4}}>總工期 / 上限工作日</div>
-                  <div style={{display:'flex',alignItems:'center',justifyContent:'center',gap:4}}>
-                    <span style={{fontSize:14,fontWeight:700,color:isOver?'#dc2626':'#065f46'}}>{totalWDSpan}</span>
-                    <span style={{fontSize:12,color:'#9ca3af'}}>/</span>
-                    <input
-                      type="number" min={1} max={365}
-                      value={proj.maxWorkdays}
-                      onChange={e=>upd(p=>({...p,maxWorkdays:Math.max(1,+e.target.value||95)}))}
-                      style={{width:46,textAlign:'center',fontSize:14,fontWeight:700,color:isOver?'#dc2626':'#065f46',border:'none',borderBottom:`1.5px solid ${isOver?'#fca5a5':'#a7f3d0'}`,background:'transparent',outline:'none',padding:'0 2px'}}
-                    />
-                    <span style={{fontSize:11,color:'#9ca3af'}}>天</span>
-                  </div>
+              <div style={{display:'flex',gap:10}}>
+                <div style={{background:'#f9fafb',border:'1px solid #e5e7eb',borderRadius:8,padding:'10px 16px',textAlign:'center'}}>
+                   <div style={{fontSize:10,color:'#9ca3af'}}>預計完工</div>
+                   <div style={{fontSize:14,fontWeight:700,color:isOver?'#dc2626':'#065f46'}}>{formatDate(lastEnd)}</div>
                 </div>
               </div>
             </div>
-            {isOver&&<div style={{background:'#fef2f2',border:'1px solid #fecaca',borderRadius:8,padding:'10px 14px',fontSize:13,color:'#dc2626',marginBottom:12}}>⚠ 總工期超過上限 <strong>{totalWDSpan-proj.maxWorkdays} 天</strong></div>}
-            <div>
-              <div style={{display:'flex',justifyContent:'space-between',marginBottom:5}}>
-                <span style={{fontSize:12,color:'#6b7280'}}>整體工項完成 {doneCnt}/{allItems.length} 項</span>
-                <span style={{fontSize:12,fontWeight:700,color:'#065f46'}}>{allItems.length?Math.round(doneCnt/allItems.length*100):0}%</span>
-              </div>
-              <div style={{height:8,background:'#f3f4f6',borderRadius:4}}>
-                <div style={{height:'100%',width:`${allItems.length?Math.round(doneCnt/allItems.length*100):0}%`,background:'linear-gradient(90deg,#065f46,#10b981)',borderRadius:4,transition:'width 0.4s'}}/>
-              </div>
+            <div style={{height:8,background:'#f3f4f6',borderRadius:4}}>
+              <div style={{height:'100%',width:`${allItems.length?Math.round(doneCnt/allItems.length*100):0}%`,background:'linear-gradient(90deg,#065f46,#10b981)',borderRadius:4}}/>
             </div>
           </div>
 
-          {/* Gantt */}
-          {proj.trades.length>0&&ganttStart&&ganttEnd&&(
+          {proj.trades.length>0 && (
             <GanttChart trades={proj.trades} ganttStart={ganttStart} ganttEnd={ganttEnd} onTradeStartDate={h.onStartDate}/>
           )}
 
-          {/* Trade cards */}
-          <div style={{marginBottom:8,display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-            <span style={{fontSize:13,fontWeight:700,color:'#111827'}}>工項施作清單</span>
-            <span style={{fontSize:11,color:'#9ca3af'}}>點狀態切換 · 滑桿調整工期 · 起始日可直接點選</span>
-          </div>
           {proj.trades.map(trade=><TradeCard key={trade.id} trade={trade} {...h}/>)}
-
-          <div style={{background:'white',border:'1px solid #e5e7eb',borderRadius:10,padding:'14px 18px',marginTop:4}}>
-            <div style={{fontSize:11,color:'#6b7280',lineHeight:1.9}}>
-              ✦ 甘特圖色條可自由拖拉調整各工種起始日，工種間可重疊排程<br/>
-              ✦ 工種卡片左側日期欄位亦可直接點選修改起始日<br/>
-              ✦ 所有工期自動扣除週六、日及中華民國國定假日（2024–2026）
-            </div>
-          </div>
         </div>
       )}
     </div>
