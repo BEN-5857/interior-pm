@@ -59,7 +59,26 @@ const STATUS = {
   done:    { label:'已完工', color:'#065f46', bg:'#d1fae5' },
 };
 
-// 這是您最初完美的 15 工種範本
+// 這是完整的 15 工種範本 (用於新增案場時自動載入)
+const DEFAULT_15_TRADES = [
+  { name:'拆除工程', days:5, items:[{content:'現場隔間牆體拆除'},{content:'舊天花板拆除'},{content:'拆除廢棄物清運'}]},
+  { name:'水電工程', days:18, items:[{content:'放樣定位'},{content:'切割打鑿埋管'},{content:'拉電源線、燈線'},{content:'配進水管、排水管、移糞管、排氣管'},{content:'改消防水管'},{content:'開燈孔'},{content:'裝開關插座／衛浴設備'},{content:'裝燈具／收尾'}]},
+  { name:'泥作工程', days:12, items:[{content:'砌磚'},{content:'全室牆面整理粉光'},{content:'防水施作'},{content:'地坪施作'},{content:'養護'},{content:'貼磁磚（壁磚、地磚）'}]},
+  { name:'門窗工程', days:5, items:[{content:'丈量門窗大小型式'},{content:'門窗製作'},{content:'門窗安裝'}]},
+  { name:'冷氣工程', days:6, items:[{content:'現場勘驗'},{content:'拉銅管、確認室內機排水管位置'},{content:'安裝、周圍水泥填縫'},{content:'裝室內室外機'}]},
+  { name:'木作工程', days:25, items:[{content:'保護工程、張貼布告'},{content:'進場放樣'},{content:'天花施作'},{content:'門片製作'},{content:'造型牆面木作'},{content:'木作收邊'}]},
+  { name:'油漆工程', days:10, items:[{content:'進場抓AB膠、批土'},{content:'批土、打磨'},{content:'門片、鐵件烤漆'},{content:'牆面滾塗'},{content:'修整收尾'}]},
+  { name:'廚具工程', days:3, items:[{content:'廚具丈量'},{content:'廚具安裝'}]},
+  { name:'玻璃工程', days:4, items:[{content:'玻璃丈量'},{content:'玻璃安裝'}]},
+  { name:'系統櫃工程', days:4, items:[{content:'系統櫃丈量'},{content:'系統櫃安裝'}]},
+  { name:'木地板工程', days:5, items:[{content:'木地板丈量'},{content:'木地板施工'},{content:'打矽利康收邊'}]},
+  { name:'其他工程', days:3, items:[{content:'人造石丈量'},{content:'人造石安裝'}]},
+  { name:'清潔工程', days:2, items:[{content:'全室細清'}]},
+  { name:'窗簾／壁紙', days:2, items:[{content:'裝窗簾'}]},
+  { name:'家具／軟件', days:2, items:[{content:'送電器家具'},{content:'維修整理、驗收入宅'}]}
+];
+
+// 預設示範案場
 const RAW = [
   { id:'p1', name:'中山北路辦公室', client:'台灣新創股份有限公司', startDate:'2025-03-03', maxWorkdays:95, trades:[
     { id:'t1',  name:'拆除工程',   days:5,  items:[{id:'i1',content:'現場隔間牆體拆除',status:'done'},{id:'i2',content:'舊天花板拆除',status:'done'},{id:'i3',content:'拆除廢棄物清運',status:'done'}]},
@@ -282,30 +301,25 @@ export default function App() {
   const [showNew, setShowNew] = useState(false);
   const [form, setForm] = useState({name:'',client:'',startDate:''});
 
-  // 1. 讀取資料：用 JSON 解包法，維持 Claude 最強的巢狀結構
+  // 1. 雲端讀取 (維持完美的巢狀結構)
   useEffect(() => {
     async function fetchData() {
       try {
         const res = await fetch(GAS_URL);
         const data = await res.json();
         
-        // 尋找我們專屬的超級封包 'DB_V3'
         const dbRow = data.find(row => row.id === 'DB_V3');
         if (dbRow && dbRow.progress) {
           const savedData = JSON.parse(dbRow.progress);
           setProjects(savedData);
           setPid(savedData[0]?.id || null);
         } else {
-          // 如果是第一次使用或資料空了，直接套用 Claude 的預設案場
           const initial = RAW.map(p=>({...p, trades:initTrades(p.trades, p.startDate)}));
           setProjects(initial);
           setPid(initial[0].id);
         }
       } catch (e) {
-        console.error("雲端讀取失敗，進入離線模式:", e);
-        const initial = RAW.map(p=>({...p, trades:initTrades(p.trades, p.startDate)}));
-        setProjects(initial);
-        setPid(initial[0].id);
+        console.error("讀取失敗:", e);
       } finally {
         setLoading(false);
       }
@@ -313,23 +327,20 @@ export default function App() {
     fetchData();
   }, []);
 
-  // 2. 自動儲存：把所有案場打包成一句話，存進雲端
+  // 2. 雲端儲存 (一併儲存所有案場)
   useEffect(() => {
-    if (loading || !projects.length) return;
+    if (loading) return; // 讀取中不存檔
     const timer = setTimeout(async () => {
       const payload = [{
         id: 'DB_V3', 
         task: 'DO_NOT_DELETE', 
         startDate: dateToStr(new Date()), 
         days: 1, 
-        // 核心黑科技：把所有案場、分頁、細項全部變成字串存進一格
         progress: JSON.stringify(projects) 
       }];
       try {
         await fetch(GAS_URL, { method: 'POST', mode: 'no-cors', body: JSON.stringify(payload) });
-      } catch (e) {
-        console.error("備份失敗:", e);
-      }
+      } catch (e) { console.error("備份失敗:", e); }
     }, 2000); 
     return () => clearTimeout(timer);
   }, [projects, loading]);
@@ -347,7 +358,6 @@ export default function App() {
 
   const isOver = totalWDSpan > (proj?.maxWorkdays||95);
 
-  // 恢復 Claude 的動態甘特圖邊界，解決「擠在最右邊」的問題
   const ganttStart = useMemo(()=>{
     if(!proj||!proj.trades.length) return '';
     const earliest=proj.trades.reduce((e,t)=>t.startDate<e?t.startDate:e, proj.trades[0].startDate);
@@ -368,6 +378,16 @@ export default function App() {
     onDel:       (tid,iid)   => upd(p=>({...p,trades:p.trades.map(t=>t.id===tid?{...t,items:t.items.filter(i=>i.id!==iid)}:t)})),
     onStartDate: (tid,sd)    => upd(p=>({...p,trades:p.trades.map(t=>t.id===tid?{...t,startDate:sd}:t)})),
   };
+
+  // --- 刪除案場功能 ---
+  function handleDeleteProject() {
+    if (!proj) return;
+    if (window.confirm(`確定要刪除「${proj.name}」案場嗎？\n⚠️ 刪除後資料將無法復原。`)) {
+      const remainingProjects = projects.filter(p => p.id !== proj.id);
+      setProjects(remainingProjects);
+      setPid(remainingProjects.length > 0 ? remainingProjects[0].id : null);
+    }
+  }
 
   if (loading) return <div style={{padding:50, textAlign:'center'}}>正在載入您的專屬工程進度...</div>;
 
@@ -398,26 +418,41 @@ export default function App() {
           ))}
           <button onClick={()=>{
             if(!form.name.trim()||!form.startDate) return;
-            const raw=[
-              {id:'ta'+Date.now(),name:'拆除工程',days:5,items:[]},
-              {id:'tb'+Date.now(),name:'水電工程',days:15,items:[]},
-              {id:'tc'+Date.now(),name:'木作工程',days:20,items:[]},
-              {id:'td'+Date.now(),name:'油漆工程',days:10,items:[]},
-              {id:'te'+Date.now(),name:'清潔驗收',days:3,items:[]},
-            ];
-            const np={id:'p'+Date.now(),name:form.name.trim(),client:form.client.trim(),startDate:form.startDate,maxWorkdays:95,trades:initTrades(raw,form.startDate)};
+            
+            // 替每個新案場的工種與項目產生唯一的 ID，避免 React 報錯
+            const tradesWithUniqueIds = DEFAULT_15_TRADES.map((t, tIdx) => ({
+              id: 't' + Date.now() + tIdx,
+              name: t.name,
+              days: t.days,
+              items: t.items.map((i, iIdx) => ({
+                id: 'i' + Date.now() + tIdx + iIdx,
+                content: i.content,
+                status: 'waiting'
+              }))
+            }));
+
+            const np={id:'p'+Date.now(),name:form.name.trim(),client:form.client.trim(),startDate:form.startDate,maxWorkdays:95,trades:initTrades(tradesWithUniqueIds,form.startDate)};
             setProjects(ps=>[...ps,np]); setPid(np.id); setShowNew(false); setForm({name:'',client:'',startDate:''});
           }} style={{padding:'8px 20px',background:'#064e3b',color:'white',border:'none',borderRadius:6,cursor:'pointer',fontWeight:600}}>建立案場</button>
         </div>
       )}
 
-      {proj && (
+      {proj ? (
         <div style={{maxWidth:900,margin:'0 auto',padding:'20px 16px'}}>
           <div style={{background:'white',border:'1px solid #e5e7eb',borderRadius:12,padding:'20px',marginBottom:16}}>
             <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',flexWrap:'wrap',gap:12,marginBottom:16}}>
-              <div>
-                <div style={{fontSize:20,fontWeight:800,color:'#111827'}}>{proj.name}</div>
-                <div style={{fontSize:13,color:'#6b7280',marginTop:2}}>客戶：{proj.client}</div>
+              <div style={{display:'flex', alignItems:'center', gap:16, flexWrap:'wrap'}}>
+                <div>
+                  <div style={{fontSize:20,fontWeight:800,color:'#111827'}}>{proj.name}</div>
+                  <div style={{fontSize:13,color:'#6b7280',marginTop:2}}>客戶：{proj.client}</div>
+                </div>
+                {/* 刪除案場按鈕 */}
+                <button 
+                  onClick={handleDeleteProject}
+                  style={{background:'#fef2f2', color:'#dc2626', border:'1px solid #fecaca', padding:'6px 12px', borderRadius:6, fontSize:12, cursor:'pointer', fontWeight:600, height:'fit-content'}}
+                >
+                  🗑️ 刪除此案場
+                </button>
               </div>
               <div style={{display:'flex',gap:10,flexWrap:'wrap',alignItems:'stretch'}}>
                 {[
@@ -462,6 +497,10 @@ export default function App() {
           </div>
           {proj.trades.map(trade=><TradeCard key={trade.id} trade={trade} {...h}/>)}
 
+        </div>
+      ) : (
+        <div style={{padding:50, textAlign:'center', color:'#6b7280'}}>
+          目前沒有案場，請點擊右上方「＋ 新增案場」來建立。
         </div>
       )}
     </div>
